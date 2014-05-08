@@ -10,16 +10,41 @@
 // @require https://raw.githubusercontent.com/hirokidaichi/namespace-js/master/src/namespace.js
 // ==/UserScript==
 
-Namespace('com.gmail.kouheiszk.userscript.2048-ai')
+Namespace('com.gmail.kouheiszk.userscript.2048.tile')
+.define(function (ns) {
+    'use strict';
+
+    const EMPTY_TILE_NUMBER = 0;
+
+    var Tile = function(x, y, number) {
+        this.position = {x : x, y : y};
+        this.number = number;
+    };
+
+    Tile.prototype.isEmpty = function() {
+        return this.number === EMPTY_TILE_NUMBER;
+    };
+
+    var tileCreater = function(x, y, number) {
+        return new Tile(x, y, number);
+    };
+
+    ns.provide({
+        tile: tileCreater,
+        EMPTY_TILE_NUMBER: EMPTY_TILE_NUMBER
+    });
+});
+
+Namespace('com.gmail.kouheiszk.userscript.2048.solver')
+.use('com.gmail.kouheiszk.userscript.2048.tile tile,EMPTY_TILE_NUMBER')
 .define(function (ns) {
     'use strict';
 
     // CONST
     const SIZE = 4;
     const CALCULATE_DEPTH = 0;
-    const EMPTY_TILE = 0;
 
-    // Move direction types
+    // Move d types
     const UP    = 0;
     const RIGHT = 1;
     const DOWN  = 2;
@@ -46,23 +71,23 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
             if (!board[x]) board[x] = new Array(SIZE);
             for (var y = 0; y < SIZE; y++) {
                 var $tile = $tileContainer.find(".tile-position-" + (y + 1) + "-" + (x + 1));
+                var number = ns.EMPTY_TILE_NUMBER;
                 if ($tile.length) {
                     $tile.children().each(function() {
-                        var tile = parseInt($(this).text(), 10);
-                        if (!board[x][y] || tile > board[x][y]) {
-                            board[x][y] = tile;
+                        var newNumber = parseInt($(this).text(), 10);
+                        if (number === ns.EMPTY_TILE_NUMBER || newNumber > number) {
+                            number = newNumber;
                         }
                     });
-                } else {
-                    board[x][y] = EMPTY_TILE;
                 }
+                board[x][y] = ns.tile(x, y, number);
             }
         }
         return board;
     };
 
     // Move tiles
-    var move = function (direction) {
+    var move = function (d) {
         var keyCodes = {
             0 : 38, // Up
             1 : 39, // Right
@@ -78,7 +103,7 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
             altKey     : false,
             shiftKey   : false,
             metaKey    : false,
-            keyCode    : keyCodes[direction],
+            keyCode    : keyCodes[d],
             charCode   : 0
         };
 
@@ -103,25 +128,25 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
         return false;
     };
 
-    // Valid move direction
-    var validMove = function(board, direction) {
-        if (direction === UP || direction === DOWN) {
+    // Valid move d
+    var validMove = function(board, d) {
+        if (d === UP || d === DOWN) {
             for (var y = 0; y < SIZE; y++) {
                 var row = getRow(board, y);
                 for (var x = 0; x < SIZE; x++) {
-                    if (x < SIZE - 1 && row[x] === row[x + 1] && row[x] !== EMPTY_TILE) return true;
-                    if (direction === DOWN && x > 0 && row[x] === EMPTY_TILE && row[x - 1] !== EMPTY_TILE) return true;
-                    if (direction === UP && x < SIZE - 1 && row[x] === EMPTY_TILE && row[x + 1] !== EMPTY_TILE) return true;
+                    if (x < SIZE - 1 && row[x].number === row[x + 1].number && !row[x].isEmpty()) return true;
+                    if (d === DOWN && x > 0        && row[x].isEmpty() && !row[x - 1].isEmpty()) return true;
+                    if (d === UP   && x < SIZE - 1 && row[x].isEmpty() && !row[x + 1].isEmpty()) return true;
                 }
             }
         }
-        if (direction === LEFT || direction === RIGHT) {
+        if (d === LEFT || d === RIGHT) {
             for (var x = 0; x < SIZE; x++) {
-                var colmun = getColumn(board, x);
+                var col = getColumn(board, x);
                 for (var y = 0; y < SIZE; y++) {
-                    if (y < SIZE - 1 && colmun[y] === colmun[y + 1] && colmun[y] !== EMPTY_TILE) return true;
-                    if (direction === RIGHT && y > 0 && colmun[y] === EMPTY_TILE && colmun[y - 1] !== EMPTY_TILE) return true;
-                    if (direction === LEFT && y < SIZE - 1 && colmun[y] === EMPTY_TILE && colmun[y + 1] !== EMPTY_TILE) return true;
+                    if (y < SIZE - 1 && col[y].number === col[y + 1].number && !col[y].isEmpty()) return true;
+                    if (d === RIGHT && y > 0        && col[y].isEmpty() && !col[y - 1].isEmpty()) return true;
+                    if (d === LEFT  && y < SIZE - 1 && col[y].isEmpty() && !col[y + 1].isEmpty()) return true;
                 }
             }
         }
@@ -133,26 +158,26 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
         return getEmptyTiles(board).length === 0;
     };
 
-    var collapseLine = function(line, direction) {
+    var collapseLine = function(line, d) {
         var score = 0;
-        if (direction === UP || direction === LEFT) {
+        if (d === UP || d === LEFT) {
             for (var i = 0; i < SIZE - 1; i++) {
-                if (line[i] === EMPTY_TILE) continue;
-                if (line[i] === line[i + 1]) {
+                if (line[i].isEmpty()) continue;
+                if (line[i].number === line[i + 1].number) {
                     var newNumber = line[i] * 2;
-                    line[i] = newNumber;
-                    line[i + 1] = EMPTY_TILE;
+                    line[i].number = newNumber;
+                    line[i + 1].number = ns.EMPTY_TILE_NUMBER;
                     score += newNumber;
                 }
             }
         }
         else {
             for (var i = SIZE - 1; i >= 0; i--) {
-                if (line[i] === EMPTY_TILE) continue;
-                if (line[i] === line[i - 1]) {
+                if (line[i].isEmpty()) continue;
+                if (line[i].number === line[i - 1].number) {
                     var newNumber = line[i] * 2;
-                    line[i] = newNumber;
-                    line[i - 1] = EMPTY_TILE;
+                    line[i].number = newNumber;
+                    line[i - 1].number = ns.EMPTY_TILE_NUMBER;
                     score += newNumber;
                 }
             }
@@ -160,23 +185,23 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
         return score;
     };
 
-    var moveLine = function(line, direction) {
-        var newLine = new Array(SIZE);
+    var moveLine = function(line, d) {
+        var newLine = line.clone();
         for (var i = 0; i < SIZE; i++) {
-            newLine[i] = EMPTY_TILE;
+            newLine[i].number = ns.EMPTY_TILE_NUMBER;
         }
         var existsTileCount = 0;
-        if (direction === UP || direction === LEFT) {
+        if (d === UP || d === LEFT) {
             for (var i = 0; i < SIZE; i++) {
-                if (line[i] === EMPTY_TILE) continue;
-                newLine[existsTileCount] = line[i];
+                if (line[i].isEmpty()) continue;
+                newLine[existsTileCount].number = line[i].number;
                 existsTileCount++;
             }
         }
-        else {
+        if (d === DOWN || d === RIGHT) {
             for (var i = SIZE - 1; i >= 0; i--) {
-                if (line[i] === EMPTY_TILE) continue;
-                newLine[existsTileCount] = line[i];
+                if (line[i].isEmpty()) continue;
+                newLine[existsTileCount].number = line[i].number;
                 existsTileCount++;
             }
         }
@@ -193,22 +218,22 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
 
     var checkMoved = function(line1, line2) {
         for (var i = 0; i < SIZE; i++) {
-            if (line1[i] !== line2[i]) return true;
+            if (line1[i].number !== line2[i].number) return true;
         }
         return false;
     };
 
     // Move tile
-    var testMove = function(board, direction, willAddTile) {
+    var testMove = function(board, d, willAddTile) {
         willAddTile = willAddTile || false;
         var moved = false;
         var score = 0;
-        if (direction === UP || direction === DOWN) {
+        if (d === UP || d === DOWN) {
             for (var i = 0; i < SIZE; i++) {
                 var row = getRow(board, i);
-                var newRow = moveLine(row, direction);
-                var lineScore = collapseLine(newRow, direction);
-                newRow = moveLine(newRow, direction);
+                var newRow = moveLine(row, d);
+                var lineScore = collapseLine(newRow, d);
+                newRow = moveLine(newRow, d);
                 setRow(board, i, newRow);
                 if (checkMoved(row, newRow)) {
                     moved = true;
@@ -219,9 +244,9 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
         else {
             for (var i = 0; i < SIZE; i++) {
                 var column = getColumn(board, i);
-                var newColumn = moveLine(column, direction);
-                var lineScore = collapseLine(newColumn, direction);
-                newColumn = moveLine(newColumn, direction);
+                var newColumn = moveLine(column, d);
+                var lineScore = collapseLine(newColumn, d);
+                newColumn = moveLine(newColumn, d);
                 setColumn(board, i, newColumn);
                 if (checkMoved(column, newColumn)) {
                     moved = true;
@@ -248,11 +273,11 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
     };
 
     var getNumber = function(board, x, y) {
-        return board[x][y];
+        return board[x][y].number;
     };
 
     var setNumber = function(board, x, y, number) {
-        board[x][y] = number;
+        board[x][y] = number.number = number;
     };
 
     var getColumn = function(board, x) {
@@ -281,8 +306,9 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
         var tiles = new Array();
         for (var x = 0; x < SIZE; x++) {
             for (var y = 0; y < SIZE; y++) {
-                if (board[x][y] === EMPTY_TILE) {
-                    tiles.push([x, y]);
+                var tile = board[x][y];
+                if (tile.isEmpty()) {
+                    tiles.push(tile);
                 }
             }
         }
@@ -301,21 +327,21 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
         var bestScore = -1;
         var bestMove = -1;
         var foundMove = false;
-        var directionMap = {
+        var dMap = {
             0 : 'Up',
             1 : 'Right',
             2 : 'Down',
             3 : 'Left'
         };
 
-        _.each([UP, RIGHT, DOWN, LEFT], function(direction) {
-            if (validMove(board, direction)) {
+        _.each([UP, RIGHT, DOWN, LEFT], function(d) {
+            if (validMove(board, d)) {
                 foundMove = true;
                 if (depth === maxDepth) {
-                    console.log("Enable to move " + directionMap[direction]);
+                    console.log("Enable to move " + dMap[d]);
                 }
                 var newBoard = board.clone();
-                testMove(newBoard, direction, true);
+                testMove(newBoard, d, true);
                 var score = evaluateBoard(newBoard);
 
                 if (depth !== 0) {
@@ -324,7 +350,7 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
                 }
 
                 if (score > bestScore) {
-                    bestMove = direction;
+                    bestMove = d;
                     bestScore = score;
                 }
             }
@@ -332,9 +358,9 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
 
         if (depth === maxDepth) {
             if (foundMove) {
-                console.log("Select to move " + directionMap[bestMove]);
+                console.log("Select to move " + dMap[bestMove]);
             } else {
-                console.log("Couldn't to move to any directions");
+                console.log("Couldn't to move to any ds");
                 console.log(board);
             }
         }
@@ -342,11 +368,11 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
         return bestMove;
     };
 
-    var nextMoveDirection = function(board, depth) {
+    var nextMoved = function(board, depth) {
         depth = depth || CALCULATE_DEPTH;
-        var direction = nextMoveCalculator(board, depth, depth);
-        if (direction === -1) console.log("Couldn't find enable to move direction");
-        return direction;
+        var d = nextMoveCalculator(board, depth, depth);
+        if (d === -1) console.log("Couldn't find enable to move d");
+        return d;
     };
 
     var runloop = function () {
@@ -357,8 +383,8 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
                 // START LOOP
 
                 var board = getBoard();
-                var direction = nextMoveDirection(board);
-                move(direction);
+                var d = nextMoved(board);
+                move(d);
 
                 // END LOOP
                 timer = 0;
@@ -372,7 +398,7 @@ Namespace('com.gmail.kouheiszk.userscript.2048-ai')
 });
 
 Namespace
-.use('com.gmail.kouheiszk.userscript.2048-ai run')
+.use('com.gmail.kouheiszk.userscript.2048.solver run')
 .apply(function (ns) {
     'use strict';
 
