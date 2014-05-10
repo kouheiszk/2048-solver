@@ -18,11 +18,16 @@ Namespace('com.gmail.kouheiszk.userscript.2048.tile')
 
     var Tile = function(x, y, number) {
         this.position = {x : x, y : y};
-        this.number = number;
+        this.number = number || EMPTY_TILE_NUMBER;
     };
 
     Tile.prototype.isEmpty = function() {
         return this.number === EMPTY_TILE_NUMBER;
+    };
+
+    Tile.prototype.clone = function() {
+        var newTile = new Tile(this.position.x, this.position.y, this.number);
+        return newTile;
     };
 
     var tileCreater = function(x, y, number) {
@@ -63,7 +68,7 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
 
     const SIZE = 4;
 
-    // Deep copy
+    // Deep copy tiles
     Array.prototype.clone = function() {
         if (this[0].constructor == Array) {
             var ar = new Array(this.length);
@@ -102,36 +107,31 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
 
     var collapseLine = function(line, d) {
         var size = line.length;
-        var score = 0;
         if (d === ns.UP || d === ns.LEFT) {
             for (var i = 0; i < size - 1; i++) {
-                if (line[i].isEmpty()) continue;
+                if (line[i].isEmpty()) break;
                 if (line[i].number === line[i + 1].number) {
-                    var newNumber = line[i] * 2;
-                    line[i].number = newNumber;
+                    line[i].number = line[i].number * 2;
                     line[i + 1].number = ns.EMPTY_TILE_NUMBER;
-                    score += newNumber;
                 }
             }
         }
-        else {
-            for (var i = size - 1; i >= 0; i--) {
-                if (line[i].isEmpty()) continue;
+        if (d === ns.DOWN || d === ns.RIGHT) {
+            for (var i = size - 1; i >= 1; i--) {
+                if (line[i].isEmpty()) break;
                 if (line[i].number === line[i - 1].number) {
-                    var newNumber = line[i] * 2;
-                    line[i].number = newNumber;
+                    line[i].number = line[i].number * 2;
                     line[i - 1].number = ns.EMPTY_TILE_NUMBER;
-                    score += newNumber;
                 }
             }
         }
-        return score;
     };
 
     var moveLine = function(line, d) {
         var size = line.length;
-        var newLine = line.clone();
-        for (var i = 0; i < size; i++) {
+        var newLine = new Array(size);
+        for (var i = size - 1; i >= 0; i--) {
+            newLine[i] = line[i].clone();
             newLine[i].number = ns.EMPTY_TILE_NUMBER;
         }
         var existsTileCount = 0;
@@ -145,7 +145,7 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
         if (d === ns.DOWN || d === ns.RIGHT) {
             for (var i = size - 1; i >= 0; i--) {
                 if (line[i].isEmpty()) continue;
-                newLine[existsTileCount].number = line[i].number;
+                newLine[size - 1 - existsTileCount].number = line[i].number;
                 existsTileCount++;
             }
         }
@@ -213,7 +213,7 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
     Board.prototype.getRow = function(y) {
         var row = new Array(this.size);
         for (var i = 0; i < this.size; i++) {
-            row[i] = this.tiles[i][y];
+            row[i] = this.tiles[i][y].clone();
         }
         return row;
     };
@@ -224,7 +224,7 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
 
     Board.prototype.setRow = function(y, row) {
         for (var i = 0; i < this.size; i++) {
-            this.tiles[i][y] = row[i];
+            this.tiles[i][y] = row[i].clone();
         }
     };
 
@@ -241,6 +241,15 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
 
     Board.prototype.isFilled = function() {
         return this.getEmptyTiles().length === 0;
+    };
+
+    Board.prototype.sumTilesNumber = function() {
+        var tiles = _.flatten(this.tiles);
+        var sum = 0;
+        _.each(tiles, function(tile) {
+            sum += tile.number;
+        });
+        return sum;
     };
 
     Board.prototype.canMove = function() {
@@ -316,6 +325,13 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
         return board;
     };
 
+    Board.prototype.serialize = function() {
+        return {
+            size : this.size,
+            tiles : _.map(this.tiles, function(line) { return _.map(line, function(tile) { return tile.number; }); })
+        };
+    };
+
     var boardCreater = function(size) {
         size = size || SIZE;
         return new Board(size);
@@ -332,18 +348,18 @@ Namespace('com.gmail.kouheiszk.userscript.2048.ai')
     'use strict';
 
     // CONST
-    const MAX_DEPTH = 0;
+    const MAX_DEPTH = 3;
 
     var AI = function() {
     };
 
     var evaluater = function(board) {
-        return 1;
+        return board.sumTilesNumber();
     };
 
     // Calculate Score
     AI.prototype.nextMoveCalculator = function(board, depth, maxDepth, base) {
-        base = base || 0.9;
+        base = base || 1.5;
 
         var that = this;
 
@@ -356,10 +372,13 @@ Namespace('com.gmail.kouheiszk.userscript.2048.ai')
             3 : 'Left'
         };
 
-        _.each([ns.UP, ns.RIGHT, ns.DOWN, ns.LEFT], function(d) {
+        var direction = [ns.UP, ns.RIGHT, ns.DOWN, ns.LEFT];
+        _.each(direction, function(d) {
             if (board.validMoveDirection(d)) {
                 if (depth === maxDepth) console.log("Enable to move " + directionMap[d]);
-                var newBoard = board.clone().move(d, true);
+                var newBoard = board.clone();
+                newBoard = newBoard.move(d, true);
+
                 var score = evaluater(newBoard);
 
                 if (depth !== 0) {
@@ -388,7 +407,7 @@ Namespace('com.gmail.kouheiszk.userscript.2048.ai')
         var nextMove = this.nextMoveCalculator(board, depth, depth);
 
         if (nextMove.direction === ns.NONE)
-            console.log(board);
+            console.log(board.serialize().tiles);
 
         return nextMove.direction;
     };
@@ -437,8 +456,9 @@ Namespace('com.gmail.kouheiszk.userscript.2048.solver')
     var runloop = function () {
         var timer = 0;
         document.addEventListener('DOMNodeInserted', function () {
-            if(timer) return;
+            if (timer) return;
             timer = setTimeout(function () {
+                ////////////////////////////////////////////////////
                 // START LOOP
 
                 var board = ns.board();
@@ -446,6 +466,7 @@ Namespace('com.gmail.kouheiszk.userscript.2048.solver')
                 move(d);
 
                 // END LOOP
+                ////////////////////////////////////////////////////
                 timer = 0;
             }, 30);
         }, false);
