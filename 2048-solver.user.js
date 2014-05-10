@@ -107,12 +107,14 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
 
     var collapseLine = function(line, d) {
         var size = line.length;
+        var score = 0;
         if (d === ns.UP || d === ns.LEFT) {
             for (var i = 0; i < size - 1; i++) {
                 if (line[i].isEmpty()) break;
                 if (line[i].number === line[i + 1].number) {
                     line[i].number = line[i].number * 2;
                     line[i + 1].number = ns.EMPTY_TILE_NUMBER;
+                    score += line[i].number;
                 }
             }
         }
@@ -122,9 +124,11 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
                 if (line[i].number === line[i - 1].number) {
                     line[i].number = line[i].number * 2;
                     line[i - 1].number = ns.EMPTY_TILE_NUMBER;
+                    score += line[i].number;
                 }
             }
         }
+        return score;
     };
 
     var moveLine = function(line, d) {
@@ -154,22 +158,25 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
 
     var move = function(board, d) {
         var newBoard = board.clone();
+        newBoard.lastMoveScore = 0;
         if (d === ns.UP || d === ns.DOWN) {
             for (var i = 0; i < newBoard.size; i++) {
                 var row = newBoard.getRow(i);
                 var newRow = moveLine(row, d);
-                collapseLine(newRow, d);
+                var score = collapseLine(newRow, d);
                 newRow = moveLine(newRow, d);
                 newBoard.setRow(i, newRow);
+                newBoard.lastMoveScore += score;
             }
         }
         if (d === ns.LEFT || d === ns.RIGHT) {
             for (var i = 0; i < newBoard.size; i++) {
                 var column = newBoard.getColumn(i);
                 var newColumn = moveLine(column, d);
-                collapseLine(newColumn, d);
+                var score = collapseLine(newColumn, d);
                 newColumn = moveLine(newColumn, d);
                 newBoard.setColumn(i, newColumn);
+                newBoard.lastMoveScore += score;
             }
         }
         return newBoard;
@@ -185,6 +192,7 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
     var Board = function(size) {
         this.size = size;
         this.tiles = (size) ? currentTiles(size) : null;
+        this.lastMoveScore = 0;
     };
 
     Board.prototype.maxNumber = function() {
@@ -243,6 +251,15 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
         return this.getEmptyTiles().length === 0;
     };
 
+    Board.prototype.isSame = function (board) {
+        for (var y = 0; y < this.size; y++) {
+            for (var x = 0; x < this.size; x++) {
+                if(this.tiles[y][x].number !== board.tiles[y][x].number) return false;
+            }
+        }
+        return true;
+    };
+
     Board.prototype.sumTilesNumber = function() {
         var tiles = _.flatten(this.tiles);
         var sum = 0;
@@ -291,8 +308,16 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
     };
 
     // Add tile
-    Board.prototype.addTile = function() {
+    Board.prototype.addTile = function(requestPosition) {
+        requestPosition = requestPosition || false;
         var newTileNumber = Math.random() < 0.9 ? 2 : 4;
+
+        if (requestPosition !== false) {
+            if (this.getNumber(requestPosition.x, requestPosition.y) !== ns.EMPTY_TILE_NUMBER) return false;
+            this.setNumber(requestPosition.x, requestPosition.y, newTileNumber);
+            return true;
+        }
+
         var emptyTiles = this.getEmptyTiles();
         if (emptyTiles.length === 0) return false;
         var tile = _.sample(emptyTiles);
@@ -322,6 +347,7 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
         var board = new Board();
         board.size = this.size;
         board.tiles = this.tiles.clone();
+        board.lastMoveScore = this.lastMoveScore;
         return board;
     };
 
@@ -354,12 +380,17 @@ Namespace('com.gmail.kouheiszk.userscript.2048.ai')
     };
 
     var evaluater = function(board) {
-        return board.sumTilesNumber();
+        var score = 0; //board.sumTilesNumber();
+        var moveScore = board.lastMoveScore;
+        return {
+            score : score + moveScore,
+            criticalPosition : false
+        };
     };
 
     // Calculate Score
     AI.prototype.nextMoveCalculator = function(board, depth, maxDepth, base) {
-        base = base || 1.5;
+        base = base || 0.95;
 
         var that = this;
 
@@ -368,10 +399,10 @@ Namespace('com.gmail.kouheiszk.userscript.2048.ai')
 
         _.each([ns.UP, ns.RIGHT, ns.DOWN, ns.LEFT], function(d) {
             if (board.validMoveDirection(d)) {
-                var newBoard = board.clone();
-                newBoard = newBoard.move(d, true);
-
-                var score = evaluater(newBoard);
+                var newBoard = board.clone().move(d);
+                var result = evaluater(newBoard);
+                var score = result.score;
+                newBoard.addTile(result.criticalPosition);
 
                 if (depth !== 0) {
                     var nextMove = that.nextMoveCalculator(newBoard, depth - 1, maxDepth, base);
