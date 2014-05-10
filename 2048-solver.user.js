@@ -380,8 +380,10 @@ Namespace('com.gmail.kouheiszk.userscript.2048.ai')
     };
 
     var evaluater = function(board) {
-        var score = 0; //board.sumTilesNumber();
+        var sum = board.sumTilesNumber();
+        var score = sum / board.maxNumber();
         var moveScore = board.lastMoveScore;
+
         return {
             score : score + moveScore,
             criticalPosition : false
