@@ -365,17 +365,9 @@ Namespace('com.gmail.kouheiszk.userscript.2048.ai')
 
         var bestScore = 0;
         var bestMove = ns.NONE;
-        var directionMap = {
-            0 : 'Up',
-            1 : 'Right',
-            2 : 'Down',
-            3 : 'Left'
-        };
 
-        var direction = [ns.UP, ns.RIGHT, ns.DOWN, ns.LEFT];
-        _.each(direction, function(d) {
+        _.each([ns.UP, ns.RIGHT, ns.DOWN, ns.LEFT], function(d) {
             if (board.validMoveDirection(d)) {
-                if (depth === maxDepth) console.log("Enable to move " + directionMap[d]);
                 var newBoard = board.clone();
                 newBoard = newBoard.move(d, true);
 
@@ -393,9 +385,6 @@ Namespace('com.gmail.kouheiszk.userscript.2048.ai')
             }
         });
 
-        if (depth === maxDepth && directionMap[bestMove])
-            console.log("Select to move " + directionMap[bestMove]);
-
         return {
             score : bestScore,
             direction : bestMove
@@ -406,8 +395,10 @@ Namespace('com.gmail.kouheiszk.userscript.2048.ai')
         depth = depth || MAX_DEPTH;
         var nextMove = this.nextMoveCalculator(board, depth, depth);
 
-        if (nextMove.direction === ns.NONE)
+        if (nextMove.direction === ns.NONE) {
             console.log(board.serialize().tiles);
+            return false;
+        }
 
         return nextMove.direction;
     };
@@ -455,7 +446,8 @@ Namespace('com.gmail.kouheiszk.userscript.2048.solver')
 
     var runloop = function () {
         var timer = 0;
-        document.addEventListener('DOMNodeInserted', function () {
+        var target = document.querySelector(".tile-container");
+        var observer = new MutationObserver(function(mutations) {
             if (timer) return;
             timer = setTimeout(function () {
                 ////////////////////////////////////////////////////
@@ -463,13 +455,20 @@ Namespace('com.gmail.kouheiszk.userscript.2048.solver')
 
                 var board = ns.board();
                 var d = ns.nextMoveDirection(board);
-                move(d);
+                if (d === false) observer.disconnect();
+                else move(d);
 
                 // END LOOP
                 ////////////////////////////////////////////////////
                 timer = 0;
             }, 30);
-        }, false);
+        });
+        observer.observe(target, {
+            attributes    : true,
+            childList     : true,
+            characterData : true
+        });
+
     };
 
     ns.provide({
