@@ -152,7 +152,30 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
         return newLine;
     };
 
-    var checkMoved = function(line1, line2) {
+    var move = function(board, d) {
+        var newBoard = board.clone();
+        if (d === ns.UP || d === ns.DOWN) {
+            for (var i = 0; i < newBoard.size; i++) {
+                var row = newBoard.getRow(i);
+                var newRow = moveLine(row, d);
+                collapseLine(newRow, d);
+                newRow = moveLine(newRow, d);
+                newBoard.setRow(i, newRow);
+            }
+        }
+        if (d === ns.LEFT || d === ns.RIGHT) {
+            for (var i = 0; i < newBoard.size; i++) {
+                var column = newBoard.getColumn(i);
+                var newColumn = moveLine(column, d);
+                collapseLine(newColumn, d);
+                newColumn = moveLine(newColumn, d);
+                newBoard.setColumn(i, newColumn);
+            }
+        }
+        return newBoard;
+    };
+
+    var checkLineMoved = function(line1, line2) {
         for (var i = 0; i < ns.SIZE; i++) {
             if (line1[i].number !== line2[i].number) return true;
         }
@@ -161,7 +184,7 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
 
     var Board = function(size) {
         this.size = size;
-        if (size) this.tiles = currentTiles(size);
+        this.tiles = (size) ? currentTiles(size) : null;
     };
 
     Board.prototype.maxNumber = function() {
@@ -262,41 +285,28 @@ Namespace('com.gmail.kouheiszk.userscript.2048.board')
     Board.prototype.addTile = function() {
         var newTileNumber = Math.random() < 0.9 ? 2 : 4;
         var emptyTiles = this.getEmptyTiles();
+        if (emptyTiles.length === 0) return false;
         var tile = _.sample(emptyTiles);
-        this.setNumber(tils.position.x, tils.position.y, newTileNumber);
+        this.setNumber(tile.position.x, tile.position.y, newTileNumber);
+        return true;
     };
 
     // Move tile
-    Board.prototype.testMove = function(d, willAddTile) {
+    Board.prototype.move = function(d, willAddTile) {
         willAddTile = willAddTile || false;
-        var moved = false;
-        var score = 0;
-        if (d === ns.UP || d === ns.DOWN) {
-            for (var i = 0; i < ns.SIZE; i++) {
-                var row = this.getRow(i);
-                var newRow = moveLine(row, d);
-                var lineScore = collapseLine(newRow, d);
-                newRow = moveLine(newRow, d);
-                this.setRow(i, newRow);
-                if (checkMoved(row, newRow)) moved = true;
-                score += lineScore;
-            }
-        }
-        if (d === ns.LEFT || d === ns.RIGHT) {
-            for (var i = 0; i < ns.SIZE; i++) {
-                var column = this.getColumn(i);
-                var newColumn = moveLine(column, d);
-                var lineScore = collapseLine(newColumn, d);
-                newColumn = moveLine(newColumn, d);
-                this.setColumn(i, newColumn);
-                if (checkMoved(column, newColumn)) moved = true;
-                score += lineScore;
-            }
-        }
+        var movedBoard = move(this, d);
+        if (willAddTile) movedBoard.addTile();
+        return movedBoard;
+    };
 
-        if (moved && willAddTile) this.addTile();
-
-        return score;
+    Board.prototype.rotate = function() {
+        var board = this.clone();
+        board.tiles = [
+            [this.tiles[3][0], this.tiles[2][0], this.tiles[1][0], this.tiles[0][0]],
+            [this.tiles[3][1], this.tiles[2][1], this.tiles[1][1], this.tiles[0][1]],
+            [this.tiles[3][2], this.tiles[2][2], this.tiles[1][2], this.tiles[0][2]],
+            [this.tiles[3][3], this.tiles[2][3], this.tiles[1][3], this.tiles[0][3]]];
+        return board;
     };
 
     Board.prototype.clone = function() {
@@ -322,20 +332,23 @@ Namespace('com.gmail.kouheiszk.userscript.2048.ai')
     'use strict';
 
     // CONST
-    const CALCULATE_DEPTH = 3;
+    const MAX_DEPTH = 0;
 
-    // Evaluate
-    var evaluateBoard = function(board, commonRatio) {
-        return 1.0;
+    var AI = function() {
+    };
+
+    var evaluater = function(board) {
+        return 1;
     };
 
     // Calculate Score
-    var nextMoveCalculator = function(board, depth, maxDepth, base) {
+    AI.prototype.nextMoveCalculator = function(board, depth, maxDepth, base) {
         base = base || 0.9;
 
-        var bestScore = -1;
+        var that = this;
+
+        var bestScore = 0;
         var bestMove = ns.NONE;
-        var foundMove = false;
         var directionMap = {
             0 : 'Up',
             1 : 'Right',
@@ -345,18 +358,13 @@ Namespace('com.gmail.kouheiszk.userscript.2048.ai')
 
         _.each([ns.UP, ns.RIGHT, ns.DOWN, ns.LEFT], function(d) {
             if (board.validMoveDirection(d)) {
-                foundMove = true;
                 if (depth === maxDepth) console.log("Enable to move " + directionMap[d]);
-                var newBoard = board.clone();
-                var score = 0;
-                var getScore = newBoard.testMove(d, true);
-                var evaluateScore = evaluateBoard(newBoard);
-
-                score += getScore + evaluateScore;
+                var newBoard = board.clone().move(d, true);
+                var score = evaluater(newBoard);
 
                 if (depth !== 0) {
-                    var nextStepScore = nextMoveCalculator(newBoard, depth - 1, maxDepth, base);
-                    score += nextStepScore * Math.pow(base, maxDepth - depth + 1);
+                    var nextMove = that.nextMoveCalculator(newBoard, depth - 1, maxDepth, base);
+                    score += nextMove.score * Math.pow(base, maxDepth - depth + 1);
                 }
 
                 if (score > bestScore) {
@@ -366,19 +374,30 @@ Namespace('com.gmail.kouheiszk.userscript.2048.ai')
             }
         });
 
-        if (depth === maxDepth && foundMove) console.log("Select to move " + directionMap[bestMove]);
-        return bestMove;
+        if (depth === maxDepth && directionMap[bestMove])
+            console.log("Select to move " + directionMap[bestMove]);
+
+        return {
+            score : bestScore,
+            direction : bestMove
+        };
     };
 
-    var nextMoveDirection = function(board, depth) {
-        depth = depth || CALCULATE_DEPTH;
-        var d = nextMoveCalculator(board, depth, depth);
-        if (d === ns.NONE) console.log(board);
-        return d;
+    AI.prototype.nextMoveDirection = function(board, depth) {
+        depth = depth || MAX_DEPTH;
+        var nextMove = this.nextMoveCalculator(board, depth, depth);
+
+        if (nextMove.direction === ns.NONE)
+            console.log(board);
+
+        return nextMove.direction;
     };
 
     ns.provide({
-        nextMoveDirection : nextMoveDirection
+        nextMoveDirection : function(board) {
+            var ai = new AI();
+            return ai.nextMoveDirection(board);
+        }
     });
 });
 
